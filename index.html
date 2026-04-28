@@ -734,7 +734,9 @@ let activeFilter='all', amenityFilter=null, searchTerm='', selectedId=null, sort
 // Fingerprint of the last rendered shelter data — used by fetchShelters()
 // to skip re-rendering on refresh ticks where nothing changed (no flicker,
 // no scroll jump, no lost selection). See the soft-refresh block.
-let _lastFingerprint = '';
+// Sentinel `null` so the first render always runs even when the dataset
+// is empty (an empty fingerprint string would otherwise compare equal).
+let _lastFingerprint = null;
 let refreshTimer=null;
 
 // Safe shelter lookup — always coerce to same type
