@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="frame-ancestors *">
+<meta name="referrer" content="no-referrer-when-downgrade">
+<title>TN Shelter Map</title>
+<script>
+  // Apply layout mode immediately to avoid flash of wrong layout.
+  // Usage: append ?layout=full to the URL in the Experience Builder embed widget.
+  (function(){
+    const p = new URLSearchParams(window.location.search);
+    if(p.get('layout') === 'full') document.documentElement.classList.add('layout-full');
+  })();
+</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f0f2f5; --surface: #ffffff; --surface2: #f7f8fa; --border: #e2e5ea;
+    /* WCAG AA/AAA contrast on both white cards and the --bg list surface:
+       --text  19:1, --text2 8.5:1 (AAA), --text3 7.1:1 on white / 6.3:1 on --bg (AA+). */
+    --text: #0f1117; --text2: #444c5c; --text3: #4f5665;
+    --open: #00a86b; --open-bg: #e6f7f1;
+    --tema-blue: #002868; --tema-red: #BF0A30;
+    --focus: #ffbf47;
+    --shadow: 0 2px 12px rgba(0,0,0,0.08); --shadow-lg: 0 8px 32px rgba(0,0,0,0.14);
+    --radius: 14px; --radius-sm: 8px;
+  }
+  html, body { height: 100%; margin: 0; padding: 0; font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+  #app { display: flex; flex-direction: column; height: 100%; min-height: 100vh; max-width: 480px; margin: 0 auto; background: var(--bg); }
+  /* ?layout=full — stretches to fill the embed container */
+  .layout-full #app { max-width: 100%; margin: 0; }
+  .layout-full .shelter-card { margin-left: 16px; margin-right: 16px; }
+  .layout-full #header { padding-left: 20px; padding-right: 20px; }
+  .layout-full .list-header { padding-left: 20px; padding-right: 20px; }
+
+  /* ── Skip link ── */
+  .skip-link {
+    position: absolute; top: -100px; left: 0; z-index: 9999;
+    background: var(--focus); color: #000; font-weight: 700; font-size: 14px;
+    padding: 10px 16px; border-radius: 0 0 8px 0; text-decoration: none;
+    transition: top 0.2s;
+  }
+  .skip-link:focus { top: 0; }
+
+  /* ── Global focus ring ── */
+  :focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Header */
+  #header { background: var(--tema-blue); padding: 12px 16px 10px; flex-shrink: 0; z-index: 100; }
+  .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .app-title { display: flex; align-items: center; gap: 8px; }
+  .tn-badge { background: var(--tema-red); color: white; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 5px; letter-spacing: 0.5px; }
+  .app-title-text { color: white; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+  .location-pill {
+    display: flex; align-items: center; gap: 5px; font-size: 12px; font-family: 'DM Mono', monospace;
+    color: white; background: rgba(255,255,255,0.18); border: 1.5px solid rgba(255,255,255,0.5);
+    border-radius: 20px; padding: 6px 12px; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    font-weight: 600; min-height: 44px;
+  }
+  .location-pill:hover { background: rgba(255,255,255,0.28); }
+  .location-pill:focus-visible { outline-color: var(--focus); }
+
+  .search-wrap { position: relative; margin-bottom: 8px; }
+  .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text3); pointer-events: none; }
+  #search-input {
+    width: 100%; padding: 10px 10px 10px 34px; border: 2px solid var(--border); border-radius: var(--radius-sm);
+    font-family: 'DM Sans', sans-serif; font-size: 16px; /* 16px prevents iOS zoom */
+    background: var(--surface); color: var(--text); outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  #search-input:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(255,191,71,0.35); }
+  #search-input::placeholder { color: var(--text3); }
+
+  /* Filter button — lives in list header (light bg) */
+  .filter-btn {
+    display: flex; align-items: center; gap: 5px;
+    background: var(--surface); border: 1.5px solid var(--border);
+    color: var(--text2); border-radius: 20px; padding: 5px 11px;
+    font-size: 12px; font-weight: 700; font-family: 'DM Sans', sans-serif;
+    cursor: pointer; transition: all 0.15s; white-space: nowrap; min-height: 32px;
+  }
+  .filter-btn:hover { border-color: var(--tema-blue); color: var(--tema-blue); }
+  .filter-btn:focus-visible { outline: 3px solid var(--focus); }
+  .filter-btn.has-filter { background: var(--tema-blue); border-color: var(--tema-blue); color: white; }
+  /* Active-filter chip row lives beneath the header row — chips wrap to
+     new lines (stack vertically when space is tight) instead of pushing
+     the Filter button off-screen. Collapses to zero height when empty. */
+  .active-filters { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; padding: 0 16px 8px; }
+  .active-filters:empty { display: none; }
+  .active-chip {
+    display: flex; align-items: center; gap: 3px;
+    background: var(--tema-blue); color: white;
+    border-radius: 12px; padding: 3px 8px; border: none;
+    font-size: 11px; font-weight: 700; white-space: nowrap; cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .active-chip:hover { background: #003a8c; }
+  .active-chip:focus-visible { outline: 3px solid var(--focus); }
+  .active-chip-x { font-size: 13px; line-height: 1; opacity: 0.8; margin-left: 1px; }
+
+  /* Filter drawer — slides open below the list-header */
+  #filter-drawer {
+    overflow: hidden; max-height: 0;
+    transition: max-height 0.3s cubic-bezier(0.4,0,0.2,1);
+    background: var(--tema-blue);
+    padding: 0 16px;
+  }
+  #filter-drawer.open { max-height: 200px; padding: 10px 16px 10px; }
+  .filter-grid { padding-bottom: 2px; }
+  .fg-type-row { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-bottom: 8px; }
+  .fgt {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    cursor: pointer; user-select: none; opacity: 0.6; transition: opacity 0.15s, transform 0.15s;
+    background: none; border: none; padding: 2px 0; border-radius: 8px;
+  }
+  .fgt:hover { opacity: 0.85; }
+  .fgt.active { opacity: 1; transform: scale(1.08); }
+  .fgt:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; opacity: 1; }
+  .fgt-icon { width: 32px; height: 32px; border-radius: 50%; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.25); border: 2px solid transparent; transition: border-color 0.15s; }
+  .fgt.active .fgt-icon { border-color: white; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+  .fgt-label { font-size: 9px; font-weight: 700; color: white; text-align: center; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .fg-amenity-row { display: flex; gap: 6px; }
+  .amenity-toggle {
+    flex: 1; text-align: center; padding: 7px 4px;
+    border-radius: 8px; border: 1.5px solid rgba(255,255,255,0.4);
+    font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.12);
+    color: white; cursor: pointer; transition: all 0.15s; user-select: none;
+    min-height: 40px; display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .amenity-toggle.active { background: white; border-color: white; color: var(--tema-blue); }
+  .amenity-toggle:hover:not(.active) { background: rgba(255,255,255,0.22); }
+  .amenity-toggle:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+  /* Map */
+  #map-container { flex-shrink: 0; height: 36vh; position: relative; }
+  #map { width: 100%; height: 100%; }
+  .map-handle { position: absolute; bottom: 0; left: 0; right: 0; height: 18px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; z-index: 500; background: linear-gradient(transparent, rgba(0,0,0,0.05)); }
+  .handle-bar { width: 36px; height: 4px; background: rgba(255,255,255,0.8); border-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+  #fab-locate {
+    position: absolute; bottom: 14px; right: 12px; width: 48px; height: 48px;
+    background: var(--tema-blue); color: white; border: none; border-radius: 50%; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,40,104,0.4);
+    transition: all 0.2s; z-index: 400;
+  }
+  #fab-locate:hover { transform: scale(1.08); }
+  #fab-locate:active { transform: scale(0.95); }
+  #fab-locate:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+
+  /* List */
+  #list-section { flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  /* Sticky wrapper — holds the header row, the active-filter chip row,
+     and the filter drawer so they ALL stay visible when the list is
+     scrolled. Previously only .list-header was sticky, which hid the
+     drawer behind the scrolled list. */
+  .list-controls { position: sticky; top: 0; z-index: 10; background: var(--bg); box-shadow: 0 1px 0 rgba(0,0,0,0.04); }
+  .list-header { padding: 10px 16px 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .list-count { font-size: 12px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.6px; }
+  .sort-toggle {
+    font-size: 12px; color: var(--tema-blue); font-weight: 700; cursor: pointer;
+    padding: 6px 10px; border-radius: 6px; border: none; background: none;
+    min-height: 44px; display: flex; align-items: center;
+  }
+  .sort-toggle:focus-visible { outline: 3px solid var(--focus); }
+  #shelter-list { display: flex; flex-direction: column; padding: 0 0 80px; }
+
+  /* Card */
+  .shelter-card {
+    background: var(--surface); margin: 0 12px 8px; border-radius: var(--radius);
+    box-shadow: var(--shadow); border: 2px solid transparent; cursor: pointer; transition: all 0.2s; overflow: hidden;
+  }
+  .shelter-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-1px); }
+  .shelter-card:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-color: transparent; }
+  .shelter-card.selected { border-color: var(--tema-blue); box-shadow: 0 0 0 3px rgba(0,40,104,0.1), var(--shadow); }
+  .card-body { display: flex; align-items: stretch; }
+  .card-strip { width: 5px; flex-shrink: 0; }
+  .card-content { flex: 1; padding: 13px 13px 10px; min-width: 0; }
+  .card-top { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 5px; }
+  .type-icon { width: 36px; height: 36px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; overflow: hidden; }
+  .card-titles { flex: 1; min-width: 0; }
+  /* Shelter-name row — name on the left, distance pill anchored top-right.
+     Flex layout so the name truncates with ellipsis and the pill never
+     wraps or shrinks. */
+  .card-name-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .card-name { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.2px; flex: 1; min-width: 0; }
+  .card-type-label { font-size: 12px; font-weight: 600; margin-top: 1px; }
+  .card-address { font-size: 12px; color: var(--text2); line-height: 1.4; margin-bottom: 0; }
+  .card-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .dist-pill { font-size: 11px; font-family: 'DM Mono', monospace; font-weight: 600; color: #003a8c; background: #dce6fb; padding: 3px 8px; border-radius: 6px; flex-shrink: 0; white-space: nowrap; }
+  .amenity-badges { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+  .amenity-badge { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+  .amenity-badge.ada       { background: #dce9ff; border: 1px solid #7aabf7; color: #003a8c; }
+  .amenity-badge.pets      { background: #fff0cc; border: 1px solid #d4920a; color: #6b4200; }
+  .amenity-badge.generator { background: #fdfce8; border: 1px solid #b8a800; color: #4a4000; }
+  /* Inline SVG amenity icons — used in place of emoji so they render on
+     environments (some Experience Builder iframes, Windows kiosks) whose
+     emoji fonts are missing or blocked. Uses currentColor so the icon
+     picks up whatever text color surrounds it. */
+  .amty-ico { vertical-align: -2px; margin-right: 4px; flex-shrink: 0; display: inline-block; }
+  /* Larger, forced-white icon inside the dark-blue filter drawer so the
+     paw/wheelchair/bolt have enough visual mass to contrast the navy bg. */
+  .amenity-toggle .amty-ico { width: 15px; height: 15px; color: #fff; vertical-align: -3px; }
+  .amenity-toggle.active .amty-ico { color: var(--tema-blue); }
+  .card-footer { border-top: 1px solid var(--border); display: flex; }
+  .card-action {
+    flex: 1; padding: 12px 6px; display: flex; align-items: center; justify-content: center; gap: 4px;
+    font-size: 12px; font-weight: 700; color: var(--text2); cursor: pointer; transition: all 0.15s;
+    text-decoration: none; border: none; background: none; font-family: 'DM Sans', sans-serif;
+    min-height: 44px;
+  }
+  .card-action:hover { background: var(--surface2); color: var(--tema-blue); }
+  .card-action:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+  .card-action + .card-action { border-left: 1px solid var(--border); }
+  .card-action.primary { color: var(--tema-blue); }
+
+  /* Empty */
+  .empty-state { text-align: center; padding: 48px 24px; color: var(--text3); }
+  .empty-state .icon { font-size: 36px; margin-bottom: 12px; }
+  .empty-state p { font-size: 14px; line-height: 1.5; }
+
+  /* User marker */
+  .user-dot { width: 16px; height: 16px; background: var(--tema-blue); border-radius: 50%; border: 3px solid white; box-shadow: 0 0 0 3px rgba(0,40,104,0.3); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 0 3px rgba(0,40,104,0.3)} 50%{box-shadow:0 0 0 8px rgba(0,40,104,0.08)} }
+
+  /* Popup */
+  .leaflet-popup-content-wrapper { border-radius: var(--radius-sm) !important; box-shadow: var(--shadow-lg) !important; font-family: 'DM Sans',sans-serif !important; padding: 0 !important; }
+  .leaflet-popup-content { margin: 0 !important; }
+  .pop { padding: 11px 13px; min-width: 160px; }
+  .pop-name { font-size: 13px; font-weight: 700; margin-bottom: 2px; color: var(--text); }
+  .pop-type { font-size: 11px; font-weight: 600; }
+
+  /* Detail Sheet */
+  #detail-sheet { position: fixed; inset: 0; z-index: 2000; pointer-events: none; }
+  #detail-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.55); opacity: 0; transition: opacity 0.3s; }
+  #detail-content {
+    position: absolute; bottom: 0; left: 0; right: 0; max-width: 480px; margin: 0 auto;
+    background: var(--surface); border-radius: 20px 20px 0 0;
+    padding: 0 0 env(safe-area-inset-bottom,20px);
+    transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.32,0.72,0,1);
+    max-height: 80vh; overflow-y: auto;
+  }
+  #detail-sheet.open { pointer-events: all; }
+  #detail-sheet.open #detail-overlay { opacity: 1; }
+  #detail-sheet.open #detail-content { transform: translateY(0); }
+  .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
+  .sheet-close-btn {
+    position: absolute; top: 12px; right: 16px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 50%; width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 18px; line-height: 1; color: var(--text2);
+  }
+  .sheet-close-btn:focus-visible { outline: 3px solid var(--focus); }
+  .sheet-banner { margin: 14px 20px 0; border-radius: var(--radius-sm); padding: 12px 14px; display: flex; align-items: flex-start; gap: 10px; }
+  .banner-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .banner-desc { font-size: 12px; margin-top: 2px; opacity: 0.95; line-height: 1.4; }
+  .sheet-header { padding: 14px 20px 10px; }
+  .sheet-name { font-size: 19px; font-weight: 700; letter-spacing: -0.4px; margin-bottom: 3px; }
+  .sheet-addr { font-size: 13px; color: var(--text2); line-height: 1.4; }
+  .sheet-dist { font-size: 12px; font-family: 'DM Mono',monospace; font-weight: 700; margin-top: 5px; color: #003a8c; }
+  .sdiv { height: 1px; background: var(--border); margin: 0 20px; }
+  .services-sec { padding: 14px 20px; }
+  .sec-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text3); margin-bottom: 8px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { padding: 5px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--text2); }
+  .nav-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 20px 20px; }
+  .nav-btn { padding: 14px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; font-family: 'DM Sans',sans-serif; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; transition: opacity 0.15s; min-height: 48px; }
+  .nav-btn:hover { opacity: 0.88; }
+  .nav-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .nav-btn.goo { background: #1558d6; color: white; }
+  .nav-btn.apl { background: #111; color: white; }
+
+  @keyframes loadbar { 0%{transform:translateX(-100%)} 100%{transform:translateX(350%)} }
+  @media(min-width:600px){ #app{ box-shadow: var(--shadow-lg); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+</style>
+</head>
+<body>
+<a class="skip-link" href="#shelter-list">Skip to shelter list</a>
+<div id="app" role="application" aria-label="TN Shelter Map">
+  <header id="header" role="banner">
+    <div class="header-top">
+      <div class="app-title">
+        <div class="tn-badge" aria-hidden="true">TN</div>
+        <div class="app-title-text">TN Shelter Map</div>
+      </div>
+      <button class="location-pill" onclick="requestLocation()" aria-label="Use my location to find nearby shelters">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+        <span id="loc-label">Locate me</span>
+      </button>
+    </div>
+    <div class="search-wrap">
+      <label for="search-input" class="sr-only">Search shelters</label>
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input id="search-input" type="search" placeholder="Search by name, city, county…" oninput="onSearch()" aria-label="Search shelters by name, city, or county" autocomplete="off">
+    </div>
+    <div id="loading-bar" role="progressbar" aria-label="Loading shelters" aria-valuetext="Loading" style="display:none;height:3px;background:rgba(255,255,255,0.3);border-radius:2px;overflow:hidden;margin-bottom:2px">
+      <div style="height:100%;width:40%;background:white;border-radius:2px;animation:loadbar 1.2s ease-in-out infinite"></div>
+    </div>
+  </header>
+
+  <div id="map-container" role="region" aria-label="Map showing shelter locations">
+    <div id="map" aria-hidden="true"></div>
+    <div class="map-handle" aria-hidden="true"><div class="handle-bar"></div></div>
+    <button id="fab-locate" onclick="recenterOnUser()" title="Re-center on my location" aria-label="Re-center map on my location">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+    </button>
+  </div>
+
+  <main id="list-section" aria-label="Open shelters">
+    <!-- Sticky wrapper keeps header, chips, and drawer visible on scroll -->
+    <div class="list-controls">
+      <div class="list-header">
+        <div>
+          <div class="list-count" id="list-count" aria-live="polite" aria-atomic="true">Loading…</div>
+          <div id="last-refreshed" aria-live="polite" aria-atomic="true" style="font-size:11px;color:var(--text3);font-family:'DM Mono',monospace;margin-top:2px"></div>
+        </div>
+        <div class="header-actions">
+          <button id="filter-toggle-btn" class="filter-btn" onclick="toggleFilterDrawer()" aria-expanded="false" aria-controls="filter-drawer" aria-label="Open shelter filters">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+            Filter
+          </button>
+          <button class="sort-toggle" id="sort-label" onclick="toggleSort()" aria-label="Sort shelters by nearest first">📍 Nearest</button>
+        </div>
+      </div>
+      <div class="active-filters" id="active-filters" aria-label="Active filters" aria-live="polite"></div>
+      <div id="filter-drawer" aria-hidden="true">
+        <nav id="filter-grid" aria-label="Filter shelters by type and amenities"></nav>
+      </div>
+    </div>
+    <div id="shelter-list" role="list" aria-label="Shelter results"></div>
+  </main>
+</div>
+
+<div id="detail-sheet" role="dialog" aria-modal="true" aria-labelledby="detail-shelter-name" hidden>
+  <div id="detail-overlay" onclick="closeDetail()"></div>
+  <div id="detail-content">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <button class="sheet-close-btn" onclick="closeDetail()" aria-label="Close shelter details">×</button>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<script>
+// ── Shelter type icons ──
+// Inlined as base64 data URIs so this single HTML file is fully
+// self-contained for Experience Builder embedding (no external fetches,
+// no CORS/provenance surprises). Source PNGs live in /icons/ in the
+// project folder. The key name ("storm", "overnight", etc.) stays
+// stable so normaliseType() and the rest of the app don't need changes.
+// Note: "community safe zone" is TEMA's term for what the data schema
+// still calls "Storm Shelter", so it's mapped to the 'storm' key.
+const ICON_URLS = {
+  storm:         'data:image/png;base64,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', // community safe zone
+  overnight:     'data:image/png;base64,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',
+  warming:       'data:image/png;base64,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',
+  cooling:       'data:image/png;base64,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',
+  respite:       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACIAAAAiCAYAAAA6RwvCAAAFuElEQVRYR82Ye1CUVRjGn3O+Xe4iILAgILBaCYgWZpqORlgijJFSCKKZOo2NGSN2UZvMafhDscsoWjpOM+oUg6KJl0rUCiudJnVSGEA0k/stQG6C4bLfOZ1vkYWFxWUpmHaGGXa+77zP75z3nPe8zxL8Tz7EGo7P4+DUrEZiSzt5sbWDhNzXwaWjE45cBLFXo93WBs3OdrxwtCM/6dKJjLVH0TbY+IMC2fsKPKvapbTiOh6rZ7BRBvl5ENhIpjI6Gaion1DALMC9H+JEvO1HcAwZTwR/MlByx9svR1ACpvhXIJWoA3Nxq6t2f/jEUsn1t8g0zjfiuQVx12pwfRaGuU7XEdt3FxA4Vr/lljpJuglcF/e0v3uwwKAwhxpRqyOjQipGm2kAKB8+UsI0qYZJLhR3W+IuD+1KLRE02q+smSZkwaNYRfnL8Mc30KwuiiRnIZUGjCjfLiaWu+XgU1eYb4CCLNHxPxSBThrV8x6UhXtzQLEtm73f+LcvJhImsmzHBrc2m/Fe1/Rlk+ByKDXJ5PBAWBhwYjkjwNWgmeQrfx6f3QC6a9s58cdUMZ2bzF4fCkZWv1/GUdAymeLLfPrKIe/fkP9RGK42pVUpbGFIxHn3S5/5zqHHy2ZaHoXc0bkPBnLqDRC2XHbKOxOpT2sOxIF1UJ6ByaTMGLLt2zwC5c+1cPk7W+mnuV6cJPcGK3Mx/nW/Sbx+kWyDGSQGEv0R9FjFEwBxEm/bROGFGZw3N8d6E0L30t9pP67jHlLMl0w5qb7ShOSWyFKXCrhWqx2dSkxWeD+wlUqpJGigVTA2jlyAbyAzIiwqBLkqMhDAyQF4p0ywRdCGqAcG9cXHyLCMYhKW14ZD8aHa5CR7KNc+5JvLu7B9LQ24tiUVN0YHIWJ0IBKUgThx5gZ+/EJFXxWAp3CgkKB4m7KMvh/7PT//2gIbz4igJ8LkcBcQSQnlOpPDcjTSkEDRzQXTEtIn5m9f2YMEuKRPhV39lLwopCTG6MSFZTk4wklZi4AIhLS1Mkf3TxayoZ3d5IHI+jMHCxx8Fq3V7TjzMStHNGlyVPRN0KwgP4JCEy3yC8zk8q1M50NHCDJJC8Rb8Ir3dNfJ8M31KGDtgn4Re6tUgbrO2rL7l3Pe0+p3gY9cbSXJ6Wd8hPqsfimL6sbfb8WjLj+TPYRFQvNRE0hfLa2gGZ+UMJ3sSDQDwqk1x4tcFMCREXP3OGE9l4zYjLDEK3LG3qHN56IjZJFDRjMZBhjhgzuDXCkPS/OcDOqNRWAqz6sFu5l1+KPizd0aPw2WzyPvyNjYPfdPuzlvjJEA/Zg3E6KGx5pQPeGa9yI+ULHhAnp7GpTKNq+PlACxpBFHHo0SQ9yWtX79f7t8UhDhnwrv8vISHMe8EZFy/RLY4ER8KfRk+phpeoMEJfvF+uX0QFMoAmdFLJOeMjQdzW7pcUZH3ldJfVcjPyQbx2Rh6mpnuRaqDmbe3FzHfVv5GqlOTg4uY5/1jXbTBsLbbaXz7ERtaXU4JuxK4HvnVgv/xXLpJv8OBxo9/i0mc2Zz/Yjq0RZc2uoRTQ+S7DGNe/DNLMtd+u8+n5YcbdDNG1SVRxAWnyrP+XIy5c//6+N0SAAAAABJRU5ErkJggg==',
+  reunification: 'data:image/png;base64,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',
+  evacuation:    'data:image/png;base64,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',
+};
+// Keep the ICON_SVG name so every caller that does `${ICON_SVG[s.type]}`
+// keeps working — we're now rendering an <img> tag that fills whatever
+// circular container surrounds it.
+const ICON_SVG = Object.fromEntries(
+  Object.entries(ICON_URLS).map(([k, url]) => [k,
+    `<img src="${url}" alt="" class="shelter-type-icon" draggable="false" style="display:block;width:100%;height:100%;object-fit:contain">`
+  ])
+);
+
+// Inline SVG amenity icons — replace emoji (♿ 🐾 ⚡) which render as
+// missing-glyph dots in some Experience Builder iframe sandboxes.
+// currentColor so icons match the surrounding text color everywhere.
+const AMENITY_ICONS = {
+  ada:       `<svg class="amty-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="3.5" r="1.8" fill="currentColor" stroke="none"/><path d="M10.5 7l1 5h4.5"/><path d="M16 12l2 5.5"/><circle cx="10" cy="17" r="4.5"/></svg>`,
+  pets:      `<svg class="amty-ico" viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><circle cx="8" cy="6" r="2.3"/><circle cx="16" cy="6" r="2.3"/><circle cx="3.5" cy="11" r="2.1"/><circle cx="20.5" cy="11" r="2.1"/><path d="M12 11c-3.6 0-6.3 3-6.3 6.3 0 1.9 1.5 3.2 3.1 3.2 1 0 1.9-0.5 3.2-0.5s2.2 0.5 3.2 0.5c1.6 0 3.1-1.3 3.1-3.2 0-3.3-2.7-6.3-6.3-6.3z"/></svg>`,
+  generator: `<svg class="amty-ico" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M13 2L4 14h6l-1 8 10-12h-6l1-8z"/></svg>`,
+};
+
+// Type palette — colors below have been audited for WCAG AA (≥4.5:1) on
+// white card surfaces, since they're used as text on the list. Earlier
+// warming/respite/cooling values failed AA (yellows/mid-blue on white);
+// the new values keep the same hue family but are darkened.
+const TYPES = {
+  storm:         { label:'Storm Shelter',        color:'#a8311f', desc:'Immediate protection during severe weather events.' }, // 6.4:1 on white
+  overnight:     { label:'Overnight Shelter',    color:'#1a5276', desc:'Temporary lodging for individuals displaced by disasters or emergencies.' }, // 9.4:1
+  warming:       { label:'Warming Center',       color:'#8a6500', desc:'Relief during extreme cold to prevent weather-related health risks.' }, // 6.3:1
+  cooling:       { label:'Cooling Center',       color:'#155d94', desc:'Relief during extreme heat to prevent weather-related health risks.' }, // 6.6:1
+  evacuation:    { label:'Evacuation Center',    color:'#6c3483', desc:'Initial gathering points for those forced to leave their homes, offering basic services and information.' }, // 8.1:1
+  reunification: { label:'Reunification Center', color:'#7d3c98', desc:'Supports families in reconnecting after emergencies.' }, // 7.2:1
+  respite:       { label:'Respite Center',       color:'#6e5500', desc:'Short-term relief, rest, and support for those affected by disasters or prolonged emergencies.' }, // 8.0:1
+};
+
+// ════════════════════════════════════════════════════════════════
+//  ARCGIS CONFIGURATION
+//  Only this block needs editing before deployment.
+// ════════════════════════════════════════════════════════════════
+const AGOL = {
+  serviceUrl: 'https://services1.arcgis.com/kILp9lqGUeOhnDbI/ArcGIS/rest/services/Shelter_Status_Public_View/FeatureServer/0',
+
+  // Public service — no token needed.
+  token: '',
+
+  // Fetch all records (the service already filters to open/public shelters by view definition).
+  // If a status field exists to further filter, add it here.
+  whereClause: "1=1",
+
+  // Auto-refresh interval in milliseconds. 0 = disabled.
+  refreshInterval: 5 * 60 * 1000, // 5 minutes
+};
+
+// ════════════════════════════════════════════════════════════════
+//  FIELD MAPPING  (exact field names from your feature service)
+// ════════════════════════════════════════════════════════════════
+//
+//  ArcGIS field name  →  what it means
+//  ─────────────────────────────────────────────────────────────
+//  shelterType        →  Type of Shelter   (storm / overnight / warming / cooling / evacuation / reunification / respite)
+//  street             →  Address
+//  city               →  City
+//  state              →  State
+//  zip                →  Zip Code
+//  county             →  County
+//  NameShelter        →  Shelter Name
+//  details            →  Additional Notes
+//  finalCloseTime     →  Close Time (Date field — epoch ms)
+//  OpenTimeFinal      →  Open Time  (Date field — epoch ms)
+//  handicap           →  Handicap Accessible  (Yes/No string)
+//  backpower          →  Generator            (Yes/No string)
+//  allowpets          →  Allows Pets/Animals  (Yes/No string)
+//  x                  →  Longitude (WGS84)
+//  y                  →  Latitude  (WGS84)
+//  OBJECTID           →  Unique feature ID
+
+// Maps the exact shelterType coded values (stored values) to internal TYPES keys.
+function normaliseType(raw) {
+  if (!raw) return 'overnight';
+  // Substring match on a lowercased version of the raw string so any
+  // reasonable variant lands on the right key: "Cooling", "Cooling Center",
+  // "cooling center", "Storm Shelter", "Community Safe Zone", etc.
+  // Previously we did exact-key lookup and missed rows like "Cooling Center",
+  // which silently fell back to the overnight icon.
+  const s = String(raw).toLowerCase();
+  if (s.includes('storm') || s.includes('safe zone') || s.includes('community')) return 'storm';
+  if (s.includes('warming'))       return 'warming';
+  if (s.includes('cooling'))       return 'cooling';
+  if (s.includes('respite'))       return 'respite';
+  if (s.includes('reunification')) return 'reunification';
+  if (s.includes('evacuation'))    return 'evacuation';
+  if (s.includes('overnight'))     return 'overnight';
+  return 'overnight';
+}
+
+// Format an ArcGIS Date field (epoch milliseconds) into a readable time string.
+// Returns null if the value is missing/null.
+function fmtTime(epochMs) {
+  if (epochMs == null) return null;
+  return new Date(epochMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+// Build a human-readable hours string from the two Date fields.
+function buildHours(openMs, closeMs) {
+  const o = fmtTime(openMs);
+  const c = fmtTime(closeMs);
+  if (!o && !c) return '24 Hours';           // no times set → assume 24 hrs
+  if (o && c)  return `${o} – ${c}`;
+  if (c)       return `Closes ${c}`;
+  return 'Hours vary';
+}
+
+// Build the services array from the three Yes/No fields.
+// Each tag is an HTML fragment containing an inline SVG icon + label.
+function buildServices(p) {
+  const tags = [];
+  const yes = v => v && v.toString().toLowerCase().startsWith('y');
+  if (yes(p.handicap))   tags.push(`${AMENITY_ICONS.ada} Handicap Accessible`);
+  if (yes(p.backpower))  tags.push(`${AMENITY_ICONS.generator} Backup Power`);
+  if (yes(p.allowpets))  tags.push(`${AMENITY_ICONS.pets} Allows Pets / Animals`);
+  return tags;
+}
+
+// Convert a raw ArcGIS feature into the internal shelter object.
+function featureToShelter(feature) {
+  const p   = feature.attributes;
+  // x/y are stored as Double fields in WGS84 — use them directly.
+  // Fall back to geometry object if the explicit fields are missing.
+  const lat = p.y  ?? (feature.geometry ? feature.geometry.y : null);
+  const lng = p.x  ?? (feature.geometry ? feature.geometry.x : null);
+
+  const openMs  = p.OpenTimeFinal;
+  const closeMs = p.finalCloseTime;
+
+  const yes = v => v && v.toString().toLowerCase().startsWith('y');
+  return {
+    id:        p.OBJECTID,
+    name:      p.NameShelter   || 'Unknown Shelter',
+    type:      normaliseType(p.shelterType),
+    address:   p.street        || '',
+    city:      p.city          || '',
+    state:     p.state         || 'TN',
+    zip:       p.zip           || '',
+    county:    p.county        || '',
+    hours:     buildHours(openMs, closeMs),
+    hoursNote: p.details       || '',
+    phone:     '',
+    services:  buildServices(p),
+    ada:       yes(p.handicap),
+    generator: yes(p.backpower),
+    pets:      yes(p.allowpets),
+    lat,
+    lng,
+    distance:  null,
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+//  DATA FETCHING
+// ════════════════════════════════════════════════════════════════
+async function fetchShelters() {
+  setLoadingState(true);
+
+  // Exact field names from the feature service schema
+  const outFields = [
+    'OBJECTID','shelterType','street','city','state','zip','county',
+    'NameShelter','details','finalCloseTime','OpenTimeFinal',
+    'handicap','backpower','allowpets','x','y'
+  ].join(',');
+
+  const params = new URLSearchParams({
+    where:          AGOL.whereClause,
+    outFields,
+    returnGeometry: true,   // geometry as fallback if x/y fields are null
+    outSR:          4326,
+    f:              'json',
+    ...(AGOL.token ? { token: AGOL.token } : {}),
+  });
+
+  const url = `${AGOL.serviceUrl}/query?${params}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    if (data.error) throw new Error(`ArcGIS error ${data.error.code}: ${data.error.message}`);
+
+    const raw = (data.features || [])
+      .map(featureToShelter)
+      .filter(s => s.lat !== null && s.lng !== null); // drop records with no geometry
+
+    // Assign a synthetic, guaranteed-unique key to every shelter and use it
+    // as the canonical id for DOM ids, markers, and click handlers. This
+    // protects us if the service returns missing/duplicate OBJECTIDs, which
+    // was producing wrong-shelter lookups in Details/Directions.
+    shelters = raw.map((s, idx) => ({
+      ...s,
+      objectId: s.id,          // preserve the original OBJECTID if needed
+      id: `s${idx}`,           // stable synthetic key for this fetch cycle
+      distance: (userLat !== null)
+        ? haversine(userLat, userLng, s.lat, s.lng)
+        : null,
+    }));
+
+    refreshMarkers();
+    setLoadingState(false);
+    renderList();
+    updateLastRefreshed();
+
+  } catch (err) {
+    console.error('Failed to load shelters:', err);
+    setLoadingState(false);
+    showError(`Could not load shelter data.<br><small>${err.message}</small>`);
+  }
+}
+
+function setLoadingState(loading) {
+  document.getElementById('loading-bar').style.display = loading ? 'block' : 'none';
+  if (loading) document.getElementById('list-count').textContent = 'Loading…';
+}
+
+function updateLastRefreshed() {
+  const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('last-refreshed').textContent = `Updated ${t}`;
+}
+
+function showError(msg) {
+  document.getElementById('shelter-list').innerHTML =
+    `<div class="empty-state"><div class="icon">⚠️</div><p>${msg}</p>
+     <button onclick="fetchShelters()" style="margin-top:14px;padding:10px 20px;background:var(--tema-blue);color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">Retry</button></div>`;
+}
+
+// ── State ──
+let map, userMarker, userLat=null, userLng=null;
+let markers={}, shelters=[];
+let activeFilter='all', amenityFilter=null, searchTerm='', selectedId=null, sortByDistance=true;
+let refreshTimer=null;
+
+// Safe shelter lookup — always coerce to same type
+function getShelter(id) {
+  return shelters.find(s => String(s.id) === String(id));
+}
+
+function buildFilterGrid() {
+  const TYPE_FILTERS = [
+    { key:'all',           label:'All Types',            short:'All',       svg:`<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="20" fill="rgba(255,255,255,0.25)"/><text x="20" y="27" text-anchor="middle" font-family="Arial Black" font-size="18" font-weight="900" fill="white">✦</text></svg>` },
+    { key:'storm',         label:'Storm Shelter',        short:'Storm',     svg: ICON_SVG.storm },
+    { key:'overnight',     label:'Overnight Shelter',    short:'Overnight', svg: ICON_SVG.overnight },
+    { key:'warming',       label:'Warming Center',       short:'Warming',   svg: ICON_SVG.warming },
+    { key:'cooling',       label:'Cooling Center',       short:'Cooling',   svg: ICON_SVG.cooling },
+    { key:'evacuation',    label:'Evacuation Center',    short:'Evacuation',svg: ICON_SVG.evacuation },
+    { key:'reunification', label:'Reunification Center', short:'Reunify',   svg: ICON_SVG.reunification },
+    { key:'respite',       label:'Respite Center',       short:'Respite',   svg: ICON_SVG.respite },
+  ];
+
+  const typeHtml = TYPE_FILTERS.map(t => `
+    <button class="fgt ${t.key==='all'?'active':''}"
+      onclick="setFilter(this,'${t.key}')"
+      aria-pressed="${t.key==='all'}"
+      aria-label="${t.label}">
+      <div class="fgt-icon" aria-hidden="true">${t.svg}</div>
+      <div class="fgt-label" aria-hidden="true">${t.short}</div>
+    </button>`).join('');
+
+  document.getElementById('filter-grid').innerHTML = `
+    <div class="filter-grid">
+      <div class="fg-type-row" role="group" aria-label="Filter by shelter type">${typeHtml}</div>
+      <div class="fg-amenity-row" role="group" aria-label="Filter by amenity">
+        <button class="amenity-toggle" data-amenity="ada"       onclick="setAmenity(this,'ada')"       aria-pressed="false" aria-label="Filter: Handicap Accessible">${AMENITY_ICONS.ada} Handicap Accessible</button>
+        <button class="amenity-toggle" data-amenity="pets"      onclick="setAmenity(this,'pets')"      aria-pressed="false" aria-label="Filter: Allows Pets / Animals">${AMENITY_ICONS.pets} Allows Pets / Animals</button>
+        <button class="amenity-toggle" data-amenity="generator" onclick="setAmenity(this,'generator')" aria-pressed="false" aria-label="Filter: Backup Power available">${AMENITY_ICONS.generator} Backup Power</button>
+      </div>
+    </div>`;
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  buildFilterGrid();
+  bindListHandlers();   // attach delegated card + button click/keyboard handlers
+  initMap();
+  await fetchShelters();
+  if(navigator.geolocation) navigator.geolocation.getCurrentPosition(onLocationSuccess,()=>{},{timeout:5000});
+  if(AGOL.refreshInterval > 0) refreshTimer = setInterval(fetchShelters, AGOL.refreshInterval);
+});
+
+function initMap(){
+  map=L.map('map',{zoomControl:false,attributionControl:false}).setView([35.85,-86.4],7);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+  L.control.zoom({position:'topright'}).addTo(map);
+  L.control.attribution({position:'bottomleft',prefix:'© OpenStreetMap © CARTO'}).addTo(map);
+}
+
+// Remove all existing markers and re-add from current shelters array.
+function refreshMarkers(){
+  Object.values(markers).forEach(m=>map.removeLayer(m));
+  markers={};
+  shelters.forEach(s=>{
+    const tc=TYPES[s.type]||{color:'#666',emoji:'📍',label:s.type};
+    const mk=L.marker([s.lat,s.lng],{icon:makeIcon(s)}).addTo(map)
+      .bindPopup(`<div class="pop"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><div style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0">${ICON_SVG[s.type]||''}</div><div class="pop-name">${s.name}</div></div><div class="pop-type" style="color:${tc.color}">${tc.label}</div></div>`,{closeButton:false,offset:[0,-4]})
+      .on('click',()=>selectShelter(s.id));
+    markers[String(s.id)]=mk;
+  });
+}
+
+function makeIcon(s, sel=false){
+  const tc = TYPES[s.type] || { color:'#666' };
+  const svg = ICON_SVG[s.type] || '';
+  const sz = sel ? 44 : 34;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${sz}px;height:${sz}px;border-radius:50%;box-shadow:0 2px 10px rgba(0,0,0,${sel?'0.4':'0.25'});border:${sel?'3px':'2px'} solid white;overflow:hidden;transition:all 0.2s">${svg}</div>`,
+    iconSize: [sz, sz],
+    iconAnchor: [sz/2, sz/2],
+  });
+}
+
+function selectShelter(id){
+  // Always look up by stable shelter ID (OBJECTID). Callers from the map
+  // pass s.id; callers from list cards also pass s.id. This avoids the
+  // index-vs-id mismatch that caused popups and list cards to disagree
+  // after filtering/sorting.
+  const s = getShelter(id); if(!s) return;
+  if(selectedId && markers[String(selectedId)]){
+    const o = getShelter(selectedId);
+    if(o) markers[String(selectedId)].setIcon(makeIcon(o,false));
+  }
+  selectedId = s.id;
+  const mk = markers[String(s.id)];
+  if(mk){
+    mk.setIcon(makeIcon(s,true));
+    mk.openPopup();
+  }
+  map.flyTo([s.lat,s.lng],14,{duration:0.9});
+  document.querySelectorAll('.shelter-card').forEach(c=>c.classList.remove('selected'));
+  const card=document.getElementById('card-'+s.id);
+  if(card){card.classList.add('selected');card.scrollIntoView({behavior:'smooth',block:'nearest'});}
+}
+
+function requestLocation(){
+  if(!navigator.geolocation)return;
+  document.getElementById('loc-label').textContent='…';
+  navigator.geolocation.getCurrentPosition(onLocationSuccess,()=>{
+    document.getElementById('loc-label').textContent='Locate me';
+    alert('Could not get your location. Please enable location access.');
+  },{timeout:10000});
+}
+
+// Map FAB behavior: re-center the map on the user's already-known location.
+// If we don't have a location yet (user hasn't granted permission this
+// session), fall back to a full geolocation request so the button still
+// does something useful on first tap.
+function recenterOnUser(){
+  if(userLat===null||userLng===null){ requestLocation(); return; }
+  const z = Math.max(map.getZoom(), 12);
+  map.flyTo([userLat,userLng], z, {duration:0.8});
+}
+
+function onLocationSuccess(pos){
+  userLat=pos.coords.latitude; userLng=pos.coords.longitude;
+  document.getElementById('loc-label').textContent='Located ✓';
+  if(userMarker)map.removeLayer(userMarker);
+  userMarker=L.marker([userLat,userLng],{icon:L.divIcon({className:'',html:'<div class="user-dot"></div>',iconSize:[16,16],iconAnchor:[8,8]}),zIndexOffset:1000}).addTo(map);
+  map.flyTo([userLat,userLng],10,{duration:1});
+  shelters=shelters.map(s=>({...s,distance:haversine(userLat,userLng,s.lat,s.lng)}));
+  renderList();
+}
+
+function haversine(la1,lo1,la2,lo2){
+  const R=3958.8,dL=r(la2-la1),dO=r(lo2-lo1);
+  return R*2*Math.atan2(Math.sqrt(Math.sin(dL/2)**2+Math.cos(r(la1))*Math.cos(r(la2))*Math.sin(dO/2)**2),Math.sqrt(1-(Math.sin(dL/2)**2+Math.cos(r(la1))*Math.cos(r(la2))*Math.sin(dO/2)**2)));
+}
+function r(d){return d*Math.PI/180;}
+
+function toggleFilterDrawer(forceClose=false) {
+  const drawer = document.getElementById('filter-drawer');
+  const btn    = document.getElementById('filter-toggle-btn');
+  const isOpen = drawer.classList.contains('open');
+  if (forceClose || isOpen) {
+    drawer.classList.remove('open');
+    drawer.setAttribute('aria-hidden','true');
+    btn.setAttribute('aria-expanded','false');
+    btn.setAttribute('aria-label','Open shelter filters');
+  } else {
+    drawer.classList.add('open');
+    drawer.setAttribute('aria-hidden','false');
+    btn.setAttribute('aria-expanded','true');
+    btn.setAttribute('aria-label','Close shelter filters');
+  }
+}
+
+function updateActiveFilterBar() {
+  const bar = document.getElementById('active-filters');
+  const btn = document.getElementById('filter-toggle-btn');
+  const chips = [];
+
+  if (activeFilter !== 'all') {
+    const tc = TYPES[activeFilter];
+    chips.push({ label: tc ? tc.label : activeFilter, clear: () => {
+      document.querySelectorAll('.fgt').forEach(c=>{ c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
+      const allBtn = document.querySelector('.fgt[aria-label="All Types"]');
+      if(allBtn){ allBtn.classList.add('active'); allBtn.setAttribute('aria-pressed','true'); }
+      activeFilter='all'; updateActiveFilterBar(); renderList();
+    }});
+  }
+  if (amenityFilter) {
+    const labels = { ada:'Handicap Accessible', pets:'Allows Pets / Animals', generator:'Backup Power' };
+    chips.push({ label: labels[amenityFilter] || amenityFilter, clear: () => {
+      document.querySelectorAll('.amenity-toggle').forEach(c=>{ c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
+      amenityFilter=null; updateActiveFilterBar(); renderList();
+    }});
+  }
+
+  bar.innerHTML = chips.map((c,i) =>
+    `<button class="active-chip" onclick="(${c.clear.toString()})()" aria-label="Remove filter: ${c.label}">
+      ${c.label}<span class="active-chip-x" aria-hidden="true">×</span>
+    </button>`
+  ).join('');
+
+  btn.classList.toggle('has-filter', chips.length > 0);
+}
+
+function setFilter(el,f){
+  document.querySelectorAll('.fgt').forEach(c=>{ c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
+  el.classList.add('active'); el.setAttribute('aria-pressed','true');
+  activeFilter=f;
+  updateActiveFilterBar();
+  renderList();
+  if(f !== 'all') toggleFilterDrawer(true); // auto-close on selection
+}
+function setAmenity(el,a){
+  if(amenityFilter===a){
+    el.classList.remove('active'); el.setAttribute('aria-pressed','false');
+    amenityFilter=null;
+  } else {
+    document.querySelectorAll('.amenity-toggle').forEach(c=>{ c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
+    el.classList.add('active'); el.setAttribute('aria-pressed','true');
+    amenityFilter=a;
+    toggleFilterDrawer(true); // auto-close on selection
+  }
+  updateActiveFilterBar();
+  renderList();
+}
+function onSearch(){searchTerm=document.getElementById('search-input').value.toLowerCase();renderList();}
+function toggleSort(){
+  sortByDistance=!sortByDistance;
+  document.getElementById('sort-label').textContent=sortByDistance?'📍 Nearest first':'🔤 A–Z';
+  renderList();
+}
+
+function getFiltered(){
+  let list=shelters.filter(s=>{
+    if(activeFilter!=='all'&&s.type!==activeFilter)return false;
+    if(amenityFilter==='ada'       && !s.ada)      return false;
+    if(amenityFilter==='pets'      && !s.pets)     return false;
+    if(amenityFilter==='generator' && !s.generator)return false;
+    if(searchTerm){const h=`${s.name} ${s.city} ${s.county} ${s.address}`.toLowerCase();if(!h.includes(searchTerm))return false;}
+    return true;
+  });
+  if(sortByDistance&&userLat!==null) list.sort((a,b)=>(a.distance??Infinity)-(b.distance??Infinity));
+  else list.sort((a,b)=>a.name.localeCompare(b.name));
+  return list;
+}
+
+let renderedList = [];
+
+function renderList(){
+  renderedList = getFiltered();
+  document.getElementById('list-count').textContent=`${renderedList.length} open shelter${renderedList.length!==1?'s':''}`;
+  const c=document.getElementById('shelter-list');
+  if(!renderedList.length){c.innerHTML='<div class="empty-state"><div class="icon">🔍</div><p>No open shelters match your search.<br>Try a different filter or search term.</p></div>';return;}
+  c.innerHTML=renderedList.map((s,i)=>renderCard(s,i)).join('');
+}
+
+function renderCard(s, i){
+  const tc=TYPES[s.type]||{label:s.type,color:'#666'};
+  const dist=s.distance!==null?`<span class="dist-pill">📍 ${s.distance.toFixed(1)} mi</span>`:'';
+  const cityLine=[s.address,[s.city,s.state].filter(Boolean).join(', ')+(s.zip?` ${s.zip}`:''),s.county?`(${s.county} Co.)`:''].filter(Boolean).join(' · ');
+  const amenities=[
+    s.ada       ? `<span class="amenity-badge ada">${AMENITY_ICONS.ada} Handicap Accessible</span>`          : '',
+    s.pets      ? `<span class="amenity-badge pets">${AMENITY_ICONS.pets} Allows Pets / Animals</span>`      : '',
+    s.generator ? `<span class="amenity-badge generator">${AMENITY_ICONS.generator} Backup Power</span>`     : '',
+  ].filter(Boolean).join('');
+  // Shelter id is written to data attributes and read at click time via
+  // event delegation (see the list-level listener below). This avoids any
+  // string-building bugs in inline onclick handlers.
+  const sidAttr = String(s.id).replace(/"/g,'&quot;');
+  return `<article class="shelter-card ${String(selectedId)===String(s.id)?'selected':''}" id="card-${s.id}"
+    data-shelter-id="${sidAttr}"
+    role="listitem"
+    tabindex="0"
+    aria-label="${s.name}, ${tc.label}, ${s.city}${s.distance!==null?' — '+s.distance.toFixed(1)+' miles away':''}">
+    <div class="card-body">
+      <div class="card-strip" style="background:${tc.color}"></div>
+      <div class="card-content">
+        <div class="card-top">
+          <div class="type-icon">${ICON_SVG[s.type]||''}</div>
+          <div class="card-titles">
+            <div class="card-name-row">
+              <div class="card-name">${s.name}</div>
+              ${dist}
+            </div>
+            <div class="card-type-label" style="color:${tc.color}">${tc.label}</div>
+          </div>
+        </div>
+        <div class="card-address">${cityLine}</div>
+        ${amenities?`<div class="amenity-badges">${amenities}</div>`:''}
+      </div>
+    </div>
+    <div class="card-footer">
+      <button class="card-action primary" data-action="details" data-shelter-id="${sidAttr}" aria-label="View details for ${s.name}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        Details
+      </button>
+      <button class="card-action" data-action="directions" data-shelter-id="${sidAttr}" aria-label="Get directions to ${s.name}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+        Directions
+      </button>
+    </div>
+  </article>`;
+}
+
+// ────────────────────────────────────────────────────────────
+//  Event delegation for the shelter list.
+//  One listener, attached once, survives every re-render because
+//  it's bound to the parent container (not the cards themselves).
+//  The shelter id is read from the DOM at click time — no stale
+//  closures, no string-escaping hazards from inline onclick.
+// ────────────────────────────────────────────────────────────
+function bindListHandlers() {
+  const list = document.getElementById('shelter-list');
+  if (!list || list._bound) return;
+  list._bound = true;
+
+  list.addEventListener('click', (e) => {
+    // A button inside the card handled first so its id (and not the
+    // article's) is the authoritative one.
+    const btn = e.target.closest('.card-action[data-shelter-id]');
+    if (btn) {
+      e.stopPropagation();
+      openDetail(btn.getAttribute('data-shelter-id'));
+      return;
+    }
+    const card = e.target.closest('.shelter-card[data-shelter-id]');
+    if (card) {
+      selectShelter(card.getAttribute('data-shelter-id'));
+    }
+  });
+
+  list.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const card = e.target.closest('.shelter-card[data-shelter-id]');
+    if (!card || e.target !== card) return;  // only the card itself, not buttons
+    e.preventDefault();
+    selectShelter(card.getAttribute('data-shelter-id'));
+  });
+}
+
+let _lastFocusBeforeDetail = null;
+function openDetail(id){
+  // Look up by shelter ID so filter/sort re-renders don't corrupt the lookup.
+  const s = getShelter(id); if(!s) return;
+  _lastFocusBeforeDetail = document.activeElement;
+  // Keep the map in sync with the detail sheet: pan to the shelter, open
+  // its popup, highlight its marker, and mark its list card as selected.
+  // Fires for both the Details and Directions buttons since both route
+  // through openDetail().
+  selectShelter(id);
+  const tc=TYPES[s.type]||{label:s.type,color:'#666',desc:''};
+  const fullAddr=`${s.address}, ${s.city}, ${s.state} ${s.zip}`.trim().replace(/,\s*$/, '');
+  const addr=encodeURIComponent(fullAddr);
+  const distLine=s.distance!==null?`<div class="sheet-dist">📍 ${s.distance.toFixed(1)} mi away</div>`:'';
+  const iconSvg = ICON_SVG[s.type] || '';
+  const notesSec=s.hoursNote?`
+    <div class="sdiv"></div>
+    <div class="services-sec">
+      <div class="sec-label">Hours &amp; Notes</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.5">${s.hoursNote}</p>
+    </div>`:'';
+  const servicesSec=s.services.length?`
+    <div class="sdiv"></div>
+    <div class="services-sec">
+      <div class="sec-label">Amenities</div>
+      <div class="tags">${s.services.map(sv=>`<span class="tag">${sv}</span>`).join('')}</div>
+    </div>`:'';
+
+  document.getElementById('detail-body').innerHTML=`
+    <div class="sheet-banner" style="background:${tc.color}18;border:1px solid ${tc.color}30;margin-top:14px">
+      <div aria-hidden="true" style="width:40px;height:40px;border-radius:50%;overflow:hidden;flex-shrink:0">${iconSvg}</div>
+      <div><div class="banner-label" style="color:${tc.color}">${tc.label}</div><div class="banner-desc" style="color:${tc.color}">${tc.desc}</div></div>
+    </div>
+    <div class="sheet-header">
+      <h2 class="sheet-name" id="detail-shelter-name">${s.name}</h2>
+      <div class="sheet-addr">${s.address}<br>${s.city}, ${s.state} ${s.zip}${s.county?' — '+s.county+' County':''}</div>
+      ${distLine}
+    </div>
+    ${notesSec}
+    ${servicesSec}
+    <div class="sdiv"></div>
+    <div class="nav-btns">
+      <a class="nav-btn goo" href="https://maps.google.com/?q=${addr}" target="_blank" rel="noopener" aria-label="Open ${s.name} in Google Maps (opens new tab)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>Google Maps
+      </a>
+      <a class="nav-btn apl" href="https://maps.apple.com/?q=${addr}" target="_blank" rel="noopener" aria-label="Open ${s.name} in Apple Maps (opens new tab)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>Apple Maps
+      </a>
+    </div>`;
+
+  const sheet = document.getElementById('detail-sheet');
+  sheet.removeAttribute('hidden');
+  sheet.classList.add('open');
+  // Trap focus inside sheet — move to close button
+  setTimeout(()=>{ const btn = sheet.querySelector('.sheet-close-btn'); if(btn) btn.focus(); }, 50);
+
+  // Escape key closes
+  sheet._escHandler = e => { if(e.key==='Escape') closeDetail(); };
+  document.addEventListener('keydown', sheet._escHandler);
+}
+
+function closeDetail(){
+  const sheet = document.getElementById('detail-sheet');
+  sheet.classList.remove('open');
+  setTimeout(()=>{ sheet.setAttribute('hidden',''); }, 350);
+  document.removeEventListener('keydown', sheet._escHandler);
+  if(_lastFocusBeforeDetail) _lastFocusBeforeDetail.focus();
+}
+
+// ── iframe / embed compatibility ──────────────────────────────
+// Tell the parent page our height so Experience Builder can size
+// the embed widget correctly (postMessage approach).
+function notifyHeight() {
+  const h = document.documentElement.scrollHeight;
+  try { window.parent.postMessage({ type: 'setHeight', height: h }, '*'); } catch(e) {}
+}
+// Leaflet needs invalidateSize() when its container becomes visible
+// inside an iframe (avoids grey tiles / wrong centre).
+window.addEventListener('load', () => {
+  setTimeout(() => { if (map) map.invalidateSize(); }, 300);
+  notifyHeight();
+});
+window.addEventListener('resize', () => {
+  if (map) map.invalidateSize();
+  notifyHeight();
+});
+</script>
+</body>
+</html>
