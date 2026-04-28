@@ -713,7 +713,12 @@ async function fetchShelters() {
 
 function setLoadingState(loading) {
   document.getElementById('loading-bar').style.display = loading ? 'block' : 'none';
-  if (loading) document.getElementById('list-count').textContent = 'Loading…';
+  // Only show the "Loading…" text on the *first* fetch — once we have data,
+  // the thin progress bar at the top of the header is enough of a hint that
+  // a background refresh is in flight. Otherwise on no-change refresh ticks
+  // (where the soft-refresh path skips renderList) the count would stay
+  // stuck on "Loading…" forever.
+  if (loading && shelters.length === 0) document.getElementById('list-count').textContent = 'Loading…';
 }
 
 function updateLastRefreshed() {
@@ -1175,16 +1180,4 @@ function notifyHeight() {
   const h = document.documentElement.scrollHeight;
   try { window.parent.postMessage({ type: 'setHeight', height: h }, '*'); } catch(e) {}
 }
-// Leaflet needs invalidateSize() when its container becomes visible
-// inside an iframe (avoids grey tiles / wrong centre).
-window.addEventListener('load', () => {
-  setTimeout(() => { if (map) map.invalidateSize(); }, 300);
-  notifyHeight();
-});
-window.addEventListener('resize', () => {
-  if (map) map.invalidateSize();
-  notifyHeight();
-});
-</script>
-</body>
-</html>
+// Leafl
