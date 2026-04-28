@@ -428,9 +428,12 @@ const AGOL = {
   // Public service — no token needed.
   token: '',
 
-  // Fetch all records (the service already filters to open/public shelters by view definition).
-  // If a status field exists to further filter, add it here.
-  whereClause: "1=1",
+  // Server-side filter: only return shelters that have NOT yet hit their
+  // finalCloseTime. Records with no close time set are kept (treated as
+  // open / 24-hour). CURRENT_TIMESTAMP is evaluated by the ArcGIS service.
+  // We also re-check this client-side in fetchShelters() in case the
+  // server's clock or any caching disagrees.
+  whereClause: "finalCloseTime IS NULL OR finalCloseTime > CURRENT_TIMESTAMP",
 
   // Auto-refresh interval in milliseconds. 0 = disabled.
   refreshInterval: 5 * 60 * 1000, // 5 minutes
@@ -534,6 +537,7 @@ function featureToShelter(feature) {
     ada:       yes(p.handicap),
     generator: yes(p.backpower),
     pets:      yes(p.allowpets),
+    closeMs,                        // raw epoch ms for client-side filtering
     lat,
     lng,
     distance:  null,
@@ -571,9 +575,16 @@ async function fetchShelters() {
 
     if (data.error) throw new Error(`ArcGIS error ${data.error.code}: ${data.error.message}`);
 
-    const raw = (data.features || [])
-      .map(featureToShelter)
-      .filter(s => s.lat !== null && s.lng !== null); // drop records with no geometry
+    // Client-side filter: drop records with no geometry and any record
+     // whose finalCloseTime is already in the past. Records with no close
+     // time set are kept (treated as open / 24-hour). This duplicates the
+     // server-side WHERE clause defensively in case the service clock,
+     // caching, or schema changes ever let a stale row slip through.
+     const nowMs = Date.now();
+     const raw = (data.features || [])
+       .map(featureToShelter)
+       .filter(s => s.lat !== null && s.lng !== null)
+       .filter(s => s.closeMs == null || s.closeMs > nowMs);
 
     // Assign a synthetic, guaranteed-unique key to every shelter and use it
     // as the canonical id for DOM ids, markers, and click handlers. This
