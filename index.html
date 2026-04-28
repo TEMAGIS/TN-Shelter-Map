@@ -58,8 +58,11 @@
   /* Header */
   #header { background: var(--tema-blue); padding: 12px 16px 10px; flex-shrink: 0; z-index: 100; }
   .header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .app-title { display: flex; align-items: center; gap: 8px; }
-  .tn-badge { background: var(--tema-red); color: white; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 5px; letter-spacing: 0.5px; }
+  .app-title { display: flex; align-items: center; gap: 10px; }
+  /* Official Tennessee state logo: red field with serif "TN", thin white
+     gap, then blue stripe across the bottom. Inline SVG so it stays
+     self-contained inside Experience Builder. */
+  .tn-badge { width: 32px; height: 32px; display: block; flex-shrink: 0; }
   .app-title-text { color: white; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
   .location-pill {
     display: flex; align-items: center; gap: 5px; font-size: 12px; font-family: 'DM Mono', monospace;
@@ -293,7 +296,19 @@
   <header id="header" role="banner">
     <div class="header-top">
       <div class="app-title">
-        <div class="tn-badge" aria-hidden="true">TN</div>
+        <svg class="tn-badge" viewBox="0 0 100 100" role="img" aria-label="Tennessee state logo" xmlns="http://www.w3.org/2000/svg">
+          <!-- Red field -->
+          <rect x="0" y="0" width="100" height="86" fill="#D22730"/>
+          <!-- White gap -->
+          <rect x="0" y="86" width="100" height="6" fill="#ffffff"/>
+          <!-- Blue stripe -->
+          <rect x="0" y="92" width="100" height="8" fill="#002868"/>
+          <!-- Serif "TN" in white -->
+          <text x="50" y="62" text-anchor="middle"
+                font-family="Georgia, 'Times New Roman', serif"
+                font-weight="700" font-size="58"
+                fill="#ffffff" letter-spacing="-1">TN</text>
+        </svg>
         <div class="app-title-text">TN Shelter Map</div>
       </div>
       <button class="location-pill" onclick="requestLocation()" aria-label="Use my location to find nearby shelters">
