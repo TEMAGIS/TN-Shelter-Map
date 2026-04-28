@@ -428,12 +428,12 @@ const AGOL = {
   // Public service — no token needed.
   token: '',
 
-  // Server-side filter: only return shelters that have NOT yet hit their
-  // finalCloseTime. Records with no close time set are kept (treated as
-  // open / 24-hour). CURRENT_TIMESTAMP is evaluated by the ArcGIS service.
-  // We also re-check this client-side in fetchShelters() in case the
-  // server's clock or any caching disagrees.
-  whereClause: "finalCloseTime IS NULL OR finalCloseTime > CURRENT_TIMESTAMP",
+  // Server-side filter is built per-request from the browser's clock in
+  // fetchShelters() so we don't depend on the ArcGIS server interpreting
+  // CURRENT_TIMESTAMP correctly (some hosted services treat it as local
+  // time, others as UTC). The client-side filter in fetchShelters() then
+  // re-checks the same condition defensively.
+  whereClause: null,
 
   // Auto-refresh interval in milliseconds. 0 = disabled.
   refreshInterval: 5 * 60 * 1000, // 5 minutes
@@ -557,8 +557,16 @@ async function fetchShelters() {
     'handicap','backpower','allowpets','x','y'
   ].join(',');
 
+  // Build a UTC timestamp literal from the browser's clock — deterministic
+  // across hosted-service quirks where CURRENT_TIMESTAMP can mean either
+  // local or UTC. ArcGIS expects: timestamp 'YYYY-MM-DD HH:MM:SS'.
+  const nowMs    = Date.now();
+  const nowSql   = new Date(nowMs).toISOString().replace('T', ' ').slice(0, 19);
+  const whereSql = AGOL.whereClause
+    || `finalCloseTime IS NULL OR finalCloseTime > timestamp '${nowSql}'`;
+
   const params = new URLSearchParams({
-    where:          AGOL.whereClause,
+    where:          whereSql,
     outFields,
     returnGeometry: true,   // geometry as fallback if x/y fields are null
     outSR:          4326,
@@ -576,15 +584,25 @@ async function fetchShelters() {
     if (data.error) throw new Error(`ArcGIS error ${data.error.code}: ${data.error.message}`);
 
     // Client-side filter: drop records with no geometry and any record
-     // whose finalCloseTime is already in the past. Records with no close
-     // time set are kept (treated as open / 24-hour). This duplicates the
-     // server-side WHERE clause defensively in case the service clock,
-     // caching, or schema changes ever let a stale row slip through.
-     const nowMs = Date.now();
-     const raw = (data.features || [])
-       .map(featureToShelter)
-       .filter(s => s.lat !== null && s.lng !== null)
-       .filter(s => s.closeMs == null || s.closeMs > nowMs);
+    // whose finalCloseTime is already in the past. Records with no close
+    // time set are kept (treated as open / 24-hour). This duplicates the
+    // server-side WHERE clause defensively in case the service clock,
+    // caching, or schema ever let a stale row slip through. Coerced to
+    // Number to handle string-typed dates from any non-standard service.
+    const raw = (data.features || [])
+      .map(featureToShelter)
+      .filter(s => s.lat !== null && s.lng !== null)
+      .filter(s => {
+        if (s.closeMs == null) return true;     // no close time → keep
+        const t = Number(s.closeMs);
+        if (!Number.isFinite(t)) return true;   // unparseable → keep
+        return t > nowMs;
+      });
+
+    // Surface anything the server let through that the client filter
+    // dropped — useful when the server-side WHERE clause is being ignored.
+    const dropped = (data.features || []).length - raw.length;
+    if (dropped > 0) console.info(`[shelters] dropped ${dropped} closed/invalid record(s) client-side`);
 
     // Assign a synthetic, guaranteed-unique key to every shelter and use it
     // as the canonical id for DOM ids, markers, and click handlers. This
