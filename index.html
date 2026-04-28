@@ -436,7 +436,7 @@ const AGOL = {
   whereClause: null,
 
   // Auto-refresh interval in milliseconds. 0 = disabled.
-  refreshInterval: 5 * 60 * 1000, // 5 minutes
+  refreshInterval: 2 * 60 * 1000, // 2 minutes
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -626,9 +626,45 @@ async function fetchShelters() {
         : null,
     }));
 
-    refreshMarkers();
     setLoadingState(false);
-    renderList();
+
+    // Soft refresh: only re-render the list and rebuild markers if the
+    // underlying data actually changed. Compare a fingerprint of the
+    // fields that drive the UI (open status, position, name, amenities)
+    // — when the data is identical between ticks (the common case during
+    // quiet periods) we skip the re-render entirely, which avoids the
+    // flicker, scroll-jump, and lost focus that auto-refresh otherwise
+    // causes for users who are actively interacting with the app.
+    const fingerprint = shelters
+      .map(s => `${s.objectId}|${s.lat}|${s.lng}|${s.openMs}|${s.closeMs}|${s.name}|${s.type}|${s.ada?1:0}${s.pets?1:0}${s.generator?1:0}`)
+      .join('\n');
+
+    if (fingerprint !== _lastFingerprint) {
+      // Snapshot list scroll position + selection so we can restore them
+      // after the re-render. Without this, an auto-refresh while the user
+      // is scrolled down or has a card selected would yank them back to
+      // the top and lose their place.
+      const listEl    = document.getElementById('list-section');
+      const savedTop  = listEl ? listEl.scrollTop : 0;
+      const savedSel  = selectedId;
+
+      refreshMarkers();
+      renderList();
+
+      // Restore selection if the same shelter is still in the new data,
+      // and put the scroll back where it was.
+      if (savedSel && getShelter(savedSel)) {
+        selectedId = savedSel;
+        const card = document.getElementById('card-' + savedSel);
+        if (card) card.classList.add('selected');
+      } else {
+        selectedId = null;
+      }
+      if (listEl) listEl.scrollTop = savedTop;
+
+      _lastFingerprint = fingerprint;
+    }
+
     updateLastRefreshed();
 
   } catch (err) {
@@ -658,6 +694,10 @@ function showError(msg) {
 let map, userMarker, userLat=null, userLng=null;
 let markers={}, shelters=[];
 let activeFilter='all', amenityFilter=null, searchTerm='', selectedId=null, sortByDistance=true;
+// Fingerprint of the last rendered shelter data — used by fetchShelters()
+// to skip re-rendering on refresh ticks where nothing changed (no flicker,
+// no scroll jump, no lost selection). See the soft-refresh block.
+let _lastFingerprint = '';
 let refreshTimer=null;
 
 // Safe shelter lookup — always coerce to same type
@@ -1038,7 +1078,7 @@ function openDetail(id){
   const notesSec=s.hoursNote?`
     <div class="sdiv"></div>
     <div class="services-sec">
-      <div class="sec-label">Hours &amp; Notes</div>
+      <div class="sec-label">Additional Information</div>
       <p style="font-size:13px;color:var(--text2);line-height:1.5">${s.hoursNote}</p>
     </div>`:'';
   const servicesSec=s.services.length?`
