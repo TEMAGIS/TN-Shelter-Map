@@ -759,6 +759,32 @@ function toggleFilterDrawer(forceClose=false) {
   }
 }
 
+// Helpers used by both the filter drawer toggles and the active-filter
+// chips. Defined as named functions so they can be called from event
+// delegation without serialising closures into onclick strings (which
+// previously broke because top-level `let` state isn't visible in the
+// global onclick scope).
+function clearTypeFilter() {
+  document.querySelectorAll('.fgt').forEach(c => {
+    c.classList.remove('active');
+    c.setAttribute('aria-pressed', 'false');
+  });
+  const allBtn = document.querySelector('.fgt[aria-label="All Types"]');
+  if (allBtn) { allBtn.classList.add('active'); allBtn.setAttribute('aria-pressed', 'true'); }
+  activeFilter = 'all';
+  updateActiveFilterBar();
+  renderList();
+}
+function clearAmenityFilter() {
+  document.querySelectorAll('.amenity-toggle').forEach(c => {
+    c.classList.remove('active');
+    c.setAttribute('aria-pressed', 'false');
+  });
+  amenityFilter = null;
+  updateActiveFilterBar();
+  renderList();
+}
+
 function updateActiveFilterBar() {
   const bar = document.getElementById('active-filters');
   const btn = document.getElementById('filter-toggle-btn');
@@ -766,26 +792,30 @@ function updateActiveFilterBar() {
 
   if (activeFilter !== 'all') {
     const tc = TYPES[activeFilter];
-    chips.push({ label: tc ? tc.label : activeFilter, clear: () => {
-      document.querySelectorAll('.fgt').forEach(c=>{ c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
-      const allBtn = document.querySelector('.fgt[aria-label="All Types"]');
-      if(allBtn){ allBtn.classList.add('active'); allBtn.setAttribute('aria-pressed','true'); }
-      activeFilter='all'; updateActiveFilterBar(); renderList();
-    }});
+    chips.push({ kind: 'type',    label: tc ? tc.label : activeFilter });
   }
   if (amenityFilter) {
     const labels = { ada:'Handicap Accessible', pets:'Allows Pets / Animals', generator:'Backup Power' };
-    chips.push({ label: labels[amenityFilter] || amenityFilter, clear: () => {
-      document.querySelectorAll('.amenity-toggle').forEach(c=>{ c.classList.remove('active'); c.setAttribute('aria-pressed','false'); });
-      amenityFilter=null; updateActiveFilterBar(); renderList();
-    }});
+    chips.push({ kind: 'amenity', label: labels[amenityFilter] || amenityFilter });
   }
 
-  bar.innerHTML = chips.map((c,i) =>
-    `<button class="active-chip" onclick="(${c.clear.toString()})()" aria-label="Remove filter: ${c.label}">
+  bar.innerHTML = chips.map(c =>
+    `<button class="active-chip" type="button" data-clear="${c.kind}" aria-label="Remove filter: ${c.label}">
       ${c.label}<span class="active-chip-x" aria-hidden="true">×</span>
     </button>`
   ).join('');
+
+  // Bind a single delegated listener on the bar (idempotent).
+  if (!bar._bound) {
+    bar._bound = true;
+    bar.addEventListener('click', (e) => {
+      const chip = e.target.closest('.active-chip[data-clear]');
+      if (!chip) return;
+      const kind = chip.getAttribute('data-clear');
+      if (kind === 'type')    clearTypeFilter();
+      else if (kind === 'amenity') clearAmenityFilter();
+    });
+  }
 
   btn.classList.toggle('has-filter', chips.length > 0);
 }
