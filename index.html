@@ -921,7 +921,18 @@ function renderList(){
   renderedList = getFiltered();
   document.getElementById('list-count').textContent=`${renderedList.length} open shelter${renderedList.length!==1?'s':''}`;
   const c=document.getElementById('shelter-list');
-  if(!renderedList.length){c.innerHTML='<div class="empty-state"><div class="icon">🔍</div><p>No open shelters match your search.<br>Try a different filter or search term.</p></div>';return;}
+  if(!renderedList.length){
+    // Distinguish "filter/search returned nothing" from "no shelters are
+    // currently open at all". The first message tells the user to relax
+    // their filter; the second tells them the dataset is genuinely empty.
+    const isFiltering = activeFilter !== 'all' || amenityFilter || searchTerm;
+    if (shelters.length === 0 || !isFiltering) {
+      c.innerHTML = '<div class="empty-state" role="status"><div class="icon" aria-hidden="true">🏠</div><p>No shelters are currently open.<br>Check back later for updates.</p></div>';
+    } else {
+      c.innerHTML = '<div class="empty-state" role="status"><div class="icon" aria-hidden="true">🔍</div><p>No open shelters match your search.<br>Try a different filter or search term.</p></div>';
+    }
+    return;
+  }
   c.innerHTML=renderedList.map((s,i)=>renderCard(s,i)).join('');
 }
 
