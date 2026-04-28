@@ -665,13 +665,20 @@ async function fetchShelters() {
 
     setLoadingState(false);
 
-    // Soft refresh: only re-render the list and rebuild markers if the
+    // Always recompute the visible list and update the count text — that
+    // way the header never gets stuck on "Loading…", regardless of any
+    // soft-refresh decisions below. getFiltered() applies the user's
+    // current filter/search/sort against the freshly-fetched `shelters`.
+    renderedList = getFiltered();
+    document.getElementById('list-count').textContent =
+      `${renderedList.length} open shelter${renderedList.length !== 1 ? 's' : ''}`;
+
+    // Soft refresh: only rebuild the DOM cards and Leaflet markers if the
     // underlying data actually changed. Compare a fingerprint of the
-    // fields that drive the UI (open status, position, name, amenities)
-    // — when the data is identical between ticks (the common case during
-    // quiet periods) we skip the re-render entirely, which avoids the
-    // flicker, scroll-jump, and lost focus that auto-refresh otherwise
-    // causes for users who are actively interacting with the app.
+    // fields that drive the UI (position, open status, name, type,
+    // amenities) — when the data is identical between ticks (the common
+    // case during quiet periods) we skip the rebuild, avoiding flicker,
+    // scroll-jump, and lost selection for users mid-interaction.
     const fingerprint = shelters
       .map(s => `${s.objectId}|${s.lat}|${s.lng}|${s.openMs}|${s.closeMs}|${s.name}|${s.type}|${s.ada?1:0}${s.pets?1:0}${s.generator?1:0}`)
       .join('\n');
@@ -681,9 +688,9 @@ async function fetchShelters() {
       // after the re-render. Without this, an auto-refresh while the user
       // is scrolled down or has a card selected would yank them back to
       // the top and lose their place.
-      const listEl    = document.getElementById('list-section');
-      const savedTop  = listEl ? listEl.scrollTop : 0;
-      const savedSel  = selectedId;
+      const listEl   = document.getElementById('list-section');
+      const savedTop = listEl ? listEl.scrollTop : 0;
+      const savedSel = selectedId;
 
       refreshMarkers();
       renderList();
@@ -1180,4 +1187,16 @@ function notifyHeight() {
   const h = document.documentElement.scrollHeight;
   try { window.parent.postMessage({ type: 'setHeight', height: h }, '*'); } catch(e) {}
 }
-// Leafl
+// Leaflet needs invalidateSize() when its container becomes visible
+// inside an iframe (avoids grey tiles / wrong centre).
+window.addEventListener('load', () => {
+  setTimeout(() => { if (map) map.invalidateSize(); }, 300);
+  notifyHeight();
+});
+window.addEventListener('resize', () => {
+  if (map) map.invalidateSize();
+  notifyHeight();
+});
+</script>
+</body>
+</html>
