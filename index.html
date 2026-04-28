@@ -62,7 +62,7 @@
   /* Official Tennessee state logo: red field with serif "TN", thin white
      gap, then blue stripe across the bottom. Inline SVG so it stays
      self-contained inside Experience Builder. */
-  .tn-badge { width: 32px; height: 32px; display: block; flex-shrink: 0; }
+  .tn-badge { width: 38px; height: 38px; display: block; flex-shrink: 0; }
   .app-title-text { color: white; font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
   .location-pill {
     display: flex; align-items: center; gap: 5px; font-size: 12px; font-family: 'DM Mono', monospace;
@@ -333,16 +333,18 @@
       <div class="app-title">
         <svg class="tn-badge" viewBox="0 0 100 100" role="img" aria-label="Tennessee state logo" xmlns="http://www.w3.org/2000/svg">
           <!-- Red field -->
-          <rect x="0" y="0" width="100" height="86" fill="#D22730"/>
+          <rect x="0" y="0" width="100" height="84" fill="#D22730"/>
           <!-- White gap -->
-          <rect x="0" y="86" width="100" height="6" fill="#ffffff"/>
+          <rect x="0" y="84" width="100" height="5" fill="#ffffff"/>
           <!-- Blue stripe -->
-          <rect x="0" y="92" width="100" height="8" fill="#002868"/>
-          <!-- Serif "TN" in white -->
-          <text x="50" y="62" text-anchor="middle"
+          <rect x="0" y="89" width="100" height="11" fill="#002868"/>
+          <!-- Serif "TN" — sized so the letters fill the red field the way
+               the original logo does. textLength stretches the glyphs to
+               span 86% of the badge width regardless of font availability. -->
+          <text x="50" y="70" text-anchor="middle" textLength="86" lengthAdjust="spacingAndGlyphs"
                 font-family="Georgia, 'Times New Roman', serif"
-                font-weight="700" font-size="58"
-                fill="#ffffff" letter-spacing="-1">TN</text>
+                font-weight="700" font-size="74"
+                fill="#ffffff">TN</text>
         </svg>
         <div class="app-title-text">TN Shelter Map</div>
       </div>
