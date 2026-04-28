@@ -353,19 +353,17 @@ const ICON_SVG = {
     <path d="M20 10 C20 10 24 14 23 18 C25 16 25 13 25 13 C28 16 28 21 26 24 C28 22 29 20 28 18 C30 21 30 26 27 29 C25 31 22 32 20 32 C16 32 12 29 12 25 C12 21 15 19 15 19 C15 23 17 24 17 24 C15 21 16 16 20 10Z" fill="white"/>
   </svg>`,
 
-  // Cooling Center: blue circle, clean snowflake using paths
+  // Cooling Center: blue circle, snowflake with explicit strokes
   cooling: `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
     <circle cx="20" cy="20" r="20" fill="#1a78c2"/>
-    <g stroke="white" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="20" y1="9" x2="20" y2="31" stroke-width="2.5"/>
-      <line x1="9" y1="20" x2="31" y2="20" stroke-width="2.5"/>
-      <line x1="12.5" y1="12.5" x2="27.5" y2="27.5" stroke-width="2.5"/>
-      <line x1="27.5" y1="12.5" x2="12.5" y2="27.5" stroke-width="2.5"/>
-      <polyline points="17,12 20,9 23,12" stroke-width="2" fill="none"/>
-      <polyline points="17,28 20,31 23,28" stroke-width="2" fill="none"/>
-      <polyline points="12,17 9,20 12,23" stroke-width="2" fill="none"/>
-      <polyline points="28,17 31,20 28,23" stroke-width="2" fill="none"/>
-    </g>
+    <line x1="20" y1="9" x2="20" y2="31" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="9" y1="20" x2="31" y2="20" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="12.5" y1="12.5" x2="27.5" y2="27.5" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="27.5" y1="12.5" x2="12.5" y2="27.5" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <polyline points="17,12 20,9 23,12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <polyline points="17,28 20,31 23,28" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <polyline points="12,17 9,20 12,23" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <polyline points="28,17 31,20 28,23" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
   </svg>`,
 
   // Reunification Center: purple circle, family/people icon
@@ -658,22 +656,35 @@ function initMap(){
 function refreshMarkers(){
   Object.values(markers).forEach(m=>map.removeLayer(m));
   markers={};
-  shelters.forEach(s=>{
+  shelters.forEach((s, idx)=>{
     const tc=TYPES[s.type]||{color:'#666',label:s.type};
-    const mk=L.marker([s.lat,s.lng],{icon:makeIcon(s)}).addTo(map)
+    // Capture all needed values directly — no lookup needed on click
+    const shelterLat = s.lat;
+    const shelterLng = s.lng;
+    const shelterId  = s.id;
+    const shelterIdx = idx;
+    const mk=L.marker([shelterLat, shelterLng],{icon:makeIcon(s)}).addTo(map)
       .bindPopup(`<div class="pop"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><div style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0">${ICON_SVG[s.type]||''}</div><div class="pop-name">${s.name}</div></div><div class="pop-type" style="color:${tc.color}">${tc.label}</div></div>`,{closeButton:false,offset:[0,-4]})
-      .on('click',()=>selectShelterById(s.id));
-    markers[s.id]=mk;
+      .on('click', function(e){
+        L.DomEvent.stopPropagation(e);
+        selectShelterByIndex(shelterIdx);
+      });
+    markers[shelterId]=mk;
   });
 }
 
-// Called from map marker clicks — looks up by shelter id
-function selectShelterById(id){
-  const s = shelters.find(x=>x.id===id); if(!s) return;
-  if(selectedId!==null && markers[selectedId]){ const o=shelters.find(x=>x.id===selectedId); if(o) markers[selectedId].setIcon(makeIcon(o,false)); }
-  selectedId=s.id;
+// Called from map marker clicks — uses shelters[] index directly
+function selectShelterByIndex(idx){
+  const s = shelters[idx]; if(!s) return;
+  // Reset previous marker icon
+  if(selectedId!==null && markers[selectedId]){
+    const prev = shelters.find(x=>x.id===selectedId);
+    if(prev) markers[selectedId].setIcon(makeIcon(prev,false));
+  }
+  selectedId = s.id;
   if(markers[s.id]) markers[s.id].setIcon(makeIcon(s,true));
-  map.flyTo([s.lat,s.lng],14,{duration:0.9});
+  map.flyTo([s.lat, s.lng], 14, {duration:0.9});
+  // Highlight card if visible in list
   document.querySelectorAll('.shelter-card').forEach(c=>c.classList.remove('selected'));
   const card=document.getElementById('card-'+s.id);
   if(card){card.classList.add('selected');card.scrollIntoView({behavior:'smooth',block:'nearest'});}
@@ -681,8 +692,11 @@ function selectShelterById(id){
 
 // Called from card clicks — uses rendered list index (guaranteed correct)
 function selectShelter(i){
-  const s=renderedList[i]; if(!s) return;
-  selectShelterById(s.id);
+  const s = renderedList[i]; if(!s) return;
+  // Find this shelter's position in the master shelters array
+  const masterIdx = shelters.findIndex(x=>x.id===s.id);
+  if(masterIdx === -1) return;
+  selectShelterByIndex(masterIdx);
 }
 
 function makeIcon(s, sel=false){
