@@ -286,6 +286,41 @@
 
   @keyframes loadbar { 0%{transform:translateX(-100%)} 100%{transform:translateX(350%)} }
   @media(min-width:600px){ #app{ box-shadow: var(--shadow-lg); } }
+
+  /* ── Desktop / wide-screen layout ──
+     At 900px+ the app switches from a stacked mobile layout (header → map → list)
+     to a two-column grid: header spans the top, the shelter list takes a fixed
+     420px column on the left, and the map fills everything to the right and
+     stretches floor-to-ceiling. The list scrolls independently of the map.
+     Mobile-only affordances (the map drag handle) are hidden. */
+  @media (min-width: 900px) {
+    #app {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      grid-template-columns: 420px 1fr;
+      max-width: none;
+      width: 100%;
+      height: 100vh;
+      min-height: 100vh;
+      box-shadow: none;
+    }
+    #header        { grid-column: 1 / -1; grid-row: 1; }
+    #list-section  { grid-column: 1; grid-row: 2; border-right: 1px solid var(--border); }
+    #map-container { grid-column: 2; grid-row: 2; height: 100%; }
+    .map-handle    { display: none; }
+
+    /* Constrain the search bar so it doesn't stretch absurdly wide. */
+    #header .search-box { max-width: 520px; }
+
+    /* Detail sheet anchored to the list column on desktop instead of
+       spanning the full viewport — keeps the map visible while a card's
+       details are open, which is the usual desktop monitoring pattern. */
+    #detail-content {
+      left: 0; right: auto; bottom: 0;
+      width: 420px; max-width: 420px; margin: 0;
+      max-height: calc(100vh - 60px);
+    }
+  }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
   .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 </style>
