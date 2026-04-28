@@ -537,6 +537,7 @@ function featureToShelter(feature) {
     ada:       yes(p.handicap),
     generator: yes(p.backpower),
     pets:      yes(p.allowpets),
+    openMs,                         // raw epoch ms for client-side filtering
     closeMs,                        // raw epoch ms for client-side filtering
     lat,
     lng,
@@ -560,10 +561,17 @@ async function fetchShelters() {
   // Build a UTC timestamp literal from the browser's clock — deterministic
   // across hosted-service quirks where CURRENT_TIMESTAMP can mean either
   // local or UTC. ArcGIS expects: timestamp 'YYYY-MM-DD HH:MM:SS'.
+  //
+  // A shelter is "open" iff right now sits between OpenTimeFinal (inclusive)
+  // and finalCloseTime (exclusive) — same logic as the AGOL Arcade filter
+  // expression that produces the operational dashboard's open count.
+  // Rows missing either field are excluded entirely (treated as Closed).
   const nowMs    = Date.now();
   const nowSql   = new Date(nowMs).toISOString().replace('T', ' ').slice(0, 19);
   const whereSql = AGOL.whereClause
-    || `finalCloseTime IS NULL OR finalCloseTime > timestamp '${nowSql}'`;
+    || `OpenTimeFinal IS NOT NULL AND finalCloseTime IS NOT NULL`
+       + ` AND OpenTimeFinal <= timestamp '${nowSql}'`
+       + ` AND finalCloseTime > timestamp '${nowSql}'`;
 
   const params = new URLSearchParams({
     where:          whereSql,
@@ -584,20 +592,21 @@ async function fetchShelters() {
     if (data.error) throw new Error(`ArcGIS error ${data.error.code}: ${data.error.message}`);
 
     // Client-side filter: drop records with no geometry and any record
-    // whose finalCloseTime is already in the past. Records with no close
-    // time set are kept (treated as open / 24-hour). This duplicates the
-    // server-side WHERE clause defensively in case the service clock,
-    // caching, or schema ever let a stale row slip through. Coerced to
-    // Number to handle string-typed dates from any non-standard service.
+    // that is not currently open. A shelter is open iff
+    //   OpenTimeFinal <= now < finalCloseTime
+    // and both fields are populated — mirrors the AGOL Arcade rule used
+    // in the operational dashboard. Coerce to Number so string-typed
+    // dates from any non-standard service still compare correctly.
+    const isOpenNow = (s) => {
+      const o = Number(s.openMs);
+      const c = Number(s.closeMs);
+      if (!Number.isFinite(o) || !Number.isFinite(c)) return false;
+      return o <= nowMs && nowMs < c;
+    };
     const raw = (data.features || [])
       .map(featureToShelter)
       .filter(s => s.lat !== null && s.lng !== null)
-      .filter(s => {
-        if (s.closeMs == null) return true;     // no close time → keep
-        const t = Number(s.closeMs);
-        if (!Number.isFinite(t)) return true;   // unparseable → keep
-        return t > nowMs;
-      });
+      .filter(isOpenNow);
 
     // Surface anything the server let through that the client filter
     // dropped — useful when the server-side WHERE clause is being ignored.
