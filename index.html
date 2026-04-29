@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="frame-ancestors *">
 <meta name="referrer" content="no-referrer-when-downgrade">
 <title>TN Shelter Map</title>
@@ -346,7 +346,7 @@
                 font-weight="700" font-size="74"
                 fill="#ffffff">TN</text>
         </svg>
-        <div class="app-title-text">TN Shelter Map</div>
+        <h1 class="app-title-text">TN Shelter Map</h1>
       </div>
       <button class="location-pill" onclick="requestLocation()" aria-label="Use my location to find nearby shelters">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
@@ -388,7 +388,7 @@
         </div>
       </div>
       <div class="active-filters" id="active-filters" aria-label="Active filters" aria-live="polite"></div>
-      <div id="filter-drawer" aria-hidden="true">
+      <div id="filter-drawer" aria-hidden="true" inert>
         <nav id="filter-grid" aria-label="Filter shelters by type and amenities"></nav>
       </div>
     </div>
@@ -893,11 +893,17 @@ function toggleFilterDrawer(forceClose=false) {
   if (forceClose || isOpen) {
     drawer.classList.remove('open');
     drawer.setAttribute('aria-hidden','true');
+    // `inert` removes the closed drawer's buttons from keyboard tab order
+    // and the accessibility tree. Without this, keyboard users would tab
+    // into invisible buttons clipped by max-height:0 — a WCAG 2.4.7
+    // (Focus Visible) failure since the focus ring would be off-screen.
+    drawer.setAttribute('inert','');
     btn.setAttribute('aria-expanded','false');
     btn.setAttribute('aria-label','Open shelter filters');
   } else {
     drawer.classList.add('open');
     drawer.setAttribute('aria-hidden','false');
+    drawer.removeAttribute('inert');
     btn.setAttribute('aria-expanded','true');
     btn.setAttribute('aria-label','Close shelter filters');
   }
@@ -1164,19 +1170,36 @@ function openDetail(id){
   const sheet = document.getElementById('detail-sheet');
   sheet.removeAttribute('hidden');
   sheet.classList.add('open');
-  // Trap focus inside sheet — move to close button
+  // Move focus to the close button so screen-reader and keyboard users
+  // land inside the dialog as soon as it opens.
   setTimeout(()=>{ const btn = sheet.querySelector('.sheet-close-btn'); if(btn) btn.focus(); }, 50);
 
-  // Escape key closes
-  sheet._escHandler = e => { if(e.key==='Escape') closeDetail(); };
-  document.addEventListener('keydown', sheet._escHandler);
+  // Focus trap: keep Tab / Shift+Tab cycling within the dialog so users
+  // can't accidentally tab back into the underlying list and lose track
+  // of where they are. WCAG 2.4.3 (Focus Order) for modal dialogs.
+  sheet._keyHandler = e => {
+    if (e.key === 'Escape') { closeDetail(); return; }
+    if (e.key !== 'Tab') return;
+    const focusables = sheet.querySelectorAll(
+      'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last  = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
+  };
+  document.addEventListener('keydown', sheet._keyHandler);
 }
 
 function closeDetail(){
   const sheet = document.getElementById('detail-sheet');
   sheet.classList.remove('open');
   setTimeout(()=>{ sheet.setAttribute('hidden',''); }, 350);
-  document.removeEventListener('keydown', sheet._escHandler);
+  document.removeEventListener('keydown', sheet._keyHandler);
   if(_lastFocusBeforeDetail) _lastFocusBeforeDetail.focus();
 }
 
