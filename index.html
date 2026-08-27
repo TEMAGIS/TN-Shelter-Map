@@ -16,6 +16,8 @@
 </script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/esri-leaflet@3.0.19/dist/esri-leaflet.js"></script>
+<script src="https://unpkg.com/esri-leaflet-static-basemap-tile@1.1.1/dist/esri-leaflet-static-basemap-tile.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -460,6 +462,15 @@ const TYPES = {
 //  Only this block needs editing before deployment.
 // ════════════════════════════════════════════════════════════════
 const AGOL = {
+  // ArcGIS basemap API key — powers the Light Gray Canvas basemap below.
+  // Get a free key from your organization's ArcGIS Online account:
+  //   Content > New item > Developer credential (API key)
+  //   — or — developers.arcgis.com > Dashboard > API Keys
+  // Give it "Basemaps" privileges. This is an org-issued key (not a new
+  // third-party account) and doesn't silently expire the way the old
+  // CARTO basemap did — but if it's ever regenerated, update it here.
+  basemapApiKey: 'AAPTao8YDS6fVwg-t1lfU-enXvw..VTQwwOLoDgvD7rdnI9rADDVmlykBYx94t7vcdSaMfl071IBWyx9ZTFXd3PKqeje--sfRXv9py9naEliqm7fRRbk5MiMfSspqmzpORpVmSxVn5DLwjxPPe2gUIEjXZpQE6QcbRsdUKhEplsKxJGTA69Qrq57nk9awDuC_0DZpt1pwVkUFi98Mcu_OnXCPFMu-OmSSxZgzHswVfL4HgepO1A1XTHs-6LbPegsRYP0T3NnnZQW98ZlP6o94mIi6MOB_VFTwQILpodQdAT1_kbuiVot6',
+
   serviceUrl: 'https://services1.arcgis.com/kILp9lqGUeOhnDbI/ArcGIS/rest/services/Shelter_Status_Public_View/FeatureServer/0',
 
   // Public service — no token needed.
@@ -799,9 +810,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function initMap(){
   map=L.map('map',{zoomControl:false,attributionControl:false}).setView([35.85,-86.4],7);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+  // Esri Light Gray Canvas basemap via the ArcGIS Static Basemap Tiles
+  // service (plain raster tiles — no WebGL/vector-tile plugin needed, so
+  // it stays lightweight for mobile + Experience Builder embedding).
+  // Replaces the CARTO basemap, which started requiring its own key.
+  L.esri.Static.staticBasemapTileLayer('arcgis/light-gray', {
+    token: AGOL.basemapApiKey,
+    maxZoom: 19,
+  }).addTo(map);
   L.control.zoom({position:'topright'}).addTo(map);
-  L.control.attribution({position:'bottomleft',prefix:'© OpenStreetMap © CARTO'}).addTo(map);
+  L.control.attribution({position:'bottomleft',prefix:'Powered by Esri'}).addTo(map);
 }
 
 // Remove all existing markers and re-add from current shelters array.
